@@ -6,7 +6,6 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"strconv"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/mux"
@@ -18,13 +17,26 @@ var db *gorm.DB
 var err error
 
 type Product struct {
-	Id   int    `json:"id"`
-	Code string `json:"code"`
-	Name string `json:"name"`
+	Id    uint   `json:"id" gorm:"primary_key"`
+	Title string `json:"title"`
+	Price int    `json:"harga"`
+}
+
+type User struct {
+	Id       uint   `json:"id" gorm: "primary_key"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	Level    int    `json:"level"`
+}
+
+type Result struct {
+	Code    int         `json:"status"`
+	Data    interface{} `json:"data"`
+	Message string      `json:"message"`
 }
 
 func main() {
-	db, err = gorm.Open("mysql", "root:@tcp(localhost)/belajargo?charset=utf8&parseTime=True")
+	db, err = gorm.Open("mysql", "root:@tcp(localhost)/belajargo")
 	if err != nil {
 		log.Println("Connection failed", err)
 	} else {
@@ -32,6 +44,7 @@ func main() {
 	}
 
 	db.AutoMigrate(&Product{})
+	db.AutoMigrate(&User{})
 
 	handleRequest()
 
@@ -41,55 +54,44 @@ func handleRequest() {
 	log.Println("Start at 8000")
 
 	myRouter := mux.NewRouter().StrictSlash(true)
+
 	myRouter.HandleFunc("/", homepage)
-	myRouter.HandleFunc("/api/products", createProduct).Methods("POST")
-	myRouter.HandleFunc("/api/getproduct", getProduct)
-	myRouter.HandleFunc("/api/getproduct/{id}", returnSingleProduct)
+	myRouter.HandleFunc("/api/products", products).Methods("POST")
+	myRouter.HandleFunc("/api/register", register).Methods("POST")
+
 	log.Fatal(http.ListenAndServe(":8000", myRouter))
 }
 
 func homepage(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Welcome to homepage")
+	fmt.Fprintf(w, "Welcome!")
 }
 
-func createProduct(w http.ResponseWriter, r *http.Request) {
-	reqBody, _ := ioutil.ReadAll(r.Body)
+func products(w http.ResponseWriter, r *http.Request) {
+	payloads, _ := ioutil.ReadAll(r.Body)
 
 	var product Product
-	json.Unmarshal(reqBody, &product)
-	db.Create(&product)
+	json.Unmarshal(payloads, &product)
 
-	fmt.Println("Endpoint hit: Creating")
-	json.NewEncoder(w).Encode(product)
-
-	w.Header().Set("Content-type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
+	db.Create(product)
 }
 
-func getProduct(w http.ResponseWriter, r *http.Request) {
-	myProduct := []Product{}
+func register(w http.ResponseWriter, r *http.Request) {
+	reqBody, _ := ioutil.ReadAll(r.Body)
 
-	db.Find(&myProduct)
-	fmt.Println("Endpoint hit: returnAllBookings")
-	json.NewEncoder(w).Encode(myProduct)
-}
+	var user User
+	json.Unmarshal(reqBody, &user)
 
-func returnSingleProduct(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	key := vars["id"]
-	myProduct := []Product{}
-	db.Find(&myProduct)
+	db.Create(&user)
 
-	for _, Product := range myProduct {
-		s, err := strconv.Atoi(key)
-		if err == nil {
-			if Product.Id == s {
-				fmt.Println(Product)
-				fmt.Println("Endpoint hit:", key)
-				json.NewEncoder(w).Encode(Product)
-			}
-		}
+	res := Result{Code: 200, Data: user, Message: "Berhasil Registrasi"}
+	result, err := json.Marshal(res)
 
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(result)
+
 }
